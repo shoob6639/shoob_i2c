@@ -1,129 +1,145 @@
+//Shoob I2C V6 11/22/25
+//Designed on ATMEGA328P
+
+//Define LO/HI commands
+//HI sets DDRB bus to READ for SDA/SCL pin (PB3/PB4)
+//LO sets DDRB bus to WRITE for SDA/SCL pins
 #define SDA_HI DDRB = (DDRB & ~(1 << 3)) | 0x00 // Release SDA HI
 #define SDA_LO DDRB = (DDRB & ~(1 << 3)) | 0x08 // Pull SDA LO
 
 #define SCL_HI DDRB = (DDRB & ~(1 << 4)) | 0x00 // Release SDA HI
 #define SCL_LO DDRB = (DDRB & ~(1 << 4)) | 0x10 // Pull SCL LO
 
+//Set ACK byte to 0x00
 byte ACK = 0x00;
 
 void setup() {
-  SDA_HI;
-  SCL_HI;
-  Serial.begin(9600);
-
 }
 
-void delayClocks( uint32_t clocks ){
+//Define delay function (Based on clock cycles)
+void tick (){
+    //Define CPU cycles in a single tick()
+    //Breaks at i < 35 - 2.5KHz on Arduino Nano
+    int i = 35;
     do
     {
       __asm( "nop" );
     }
-    while ( --clocks );
+    while ( --i );
   }
 
+//Function to read SDA (PB3)
 byte SDA_READ(){
-  byte OUTPUTSDA = 0x00;
+  // Release SCL/SDA
   SDA_HI;
   SCL_HI;
-  delayClocks(500);
-  OUTPUTSDA = ((PINB & 0x08) >> 3);
-  SCL_LO;
-  delayClocks(500);
-  return(OUTPUTSDA);
-  
+   tick();
+  // Return PB3 state
+  return((PINB & 0x08) >> 3);
   }
 
+//Function to read SCL (PB4)
 byte SCL_READ(){
-  byte OUTPUTSCL = 0x00;
+  // Release SCL
   SCL_HI;
-  delayClocks(500);
-  OUTPUTSCL = ((PINB & 0x10) >> 3);
-  SCL_LO;
-  delayClocks(500);
-  return(OUTPUTSCL);
+   tick();
+  // Return PB4 state
+  return((PINB & 0x10) >> 4);
   }  
 
-void I2C_START(){ 
+void I2C_START(){
+  // Release SDA/SCL 
   SDA_HI;
   SCL_HI;
-
-  //Pull SDA LO
+  // Pull SDA LO
   SDA_LO;
-   delayClocks(500);
+   tick();
   // Pull SCL LO
   SCL_LO; 
-   delayClocks(500);
-  //DONE
+   tick();
+  // Done
   }
 
 void I2C_STOP(){
+  // Pull SDA/SCL Lo
   SDA_LO;
   SCL_LO;
-  //Release SCL HI
+  // Release SCL HI
   SCL_HI;
-   delayClocks(500);
-  //Release SDA HI
+   tick();
+  // Release SDA HI
   SDA_HI; 
-   delayClocks(500);
-  //DONE
+   tick();
+  // Done
   } 
 
+//Function to send a frame
 void I2C_SEND(byte SDA){
-  //Transmit Byte
-  SCL_LO;
+  //Begin byte loop
   for(int i = 7; i>= 0; i--) {
+    //Release SDA HI or pull LO based on the MSB of byte SDA
     (SDA & 0x80) ? SDA_HI : SDA_LO;
+    //Bitshift MSB out
     SDA <<= 1;
-     delayClocks(500);
+    //Advance the clock
+     tick();
     SCL_HI;  
-     delayClocks(500);
+     tick();
     SCL_LO;
-     delayClocks(500);
+     tick();
    }
 
-  //RELEASE SDA
+  //Listen for ACK bit from slave
   bool ACK = !SDA_READ();
-  delayClocks(500);
+  tick();
+  //Send SCL Lo, command is finished
+  SCL_LO;
+  tick();
   
   }
 
-byte I2C_READ(bool END){
-  delayClocks(500);
-  //Transmit Byte
+//Function to listen for a frame, note if it's the last frame or not
+void I2C_READ(bool END = false){
+
+  //Clear the data buffer
   byte DATA = 0x00;
-  SCL_LO;
+
+  // Begin byte loop
   for(int i = 7; i>= 0; i--) {
+    //Bitshift data buffer left one
     DATA <<= 1;
-    do{
-        SCL_HI;
-    } while(SCL_READ == 0);
-     delayClocks(500);
+    //if SCL_READ tells us the SCL clock is in use, keep the clock released
+      do{
+          SCL_HI;
+      } while(SCL_READ == 0);
+     tick();
+    //Set LSB of DATA to output of SDA_READ function
     DATA |= SDA_READ();
-     delayClocks(500);
+     tick();
+    //Send SCL Lo, iteration is finished
     SCL_LO;
-     delayClocks(500);
+     tick();
    }
-
-  Serial.print(DATA,HEX);
-  Serial.println(" ");
-  
-
-  if (!END) {
+  //Check if this is the last read in the sequennce
+  //If it isn't, send an ACK by sending the bus LO
+    if (!END) {
      ACK ? SDA_HI : SDA_LO;
+     } else {
+      SDA_HI;
      }
-  if (END) { 
-    SDA_HI;
-    }
-  delayClocks(500);
+  //Tick the clock and release SDA
+   tick();
   SCL_HI;
-  delayClocks(500);
+   tick();
   SCL_LO;
-  delayClocks(500);
+   tick();
   SDA_HI;
+
+  //Return read byte
   return(DATA);
-  
   }
 
+//Commands to read temperature from a DHT20
 void loop(){
 
   I2C_START();
@@ -132,18 +148,17 @@ void loop(){
   I2C_SEND(0x33);
   I2C_SEND(0x01);
   I2C_STOP();
-
-  delay(80);
+  tick();
   I2C_START();
   I2C_SEND(0x71);
-  I2C_READ(false);
-  I2C_READ(false);
-  I2C_READ(false);
-  I2C_READ(false);
-  I2C_READ(false);
-  I2C_READ(false);
+  I2C_READ();
+  I2C_READ();
+  I2C_READ();
+  I2C_READ();
+  I2C_READ();
+  I2C_READ();
   I2C_READ(true);
   I2C_STOP();
-  delay(2500);
+  tick();
 
 }
