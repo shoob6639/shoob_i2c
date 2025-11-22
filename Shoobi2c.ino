@@ -11,8 +11,6 @@ void setup() {
   SCL_HI;
   Serial.begin(9600);
 
-
-
 }
 
 void delayClocks( uint32_t clocks ){
@@ -22,8 +20,6 @@ void delayClocks( uint32_t clocks ){
     }
     while ( --clocks );
   }
-
-
 
 byte SDA_READ(){
   byte OUTPUTSDA = 0x00;
@@ -91,7 +87,7 @@ void I2C_SEND(byte SDA){
   
   }
 
-byte I2C_READ(){
+byte I2C_READ(bool END){
   delayClocks(500);
   //Transmit Byte
   byte DATA = 0x00;
@@ -111,7 +107,13 @@ byte I2C_READ(){
   Serial.print(DATA,HEX);
   Serial.println(" ");
   
-  ACK ? SDA_HI : SDA_LO;
+
+  if (!END) {
+     ACK ? SDA_HI : SDA_LO;
+     }
+  if (END) { 
+    SDA_HI;
+    }
   delayClocks(500);
   SCL_HI;
   delayClocks(500);
@@ -134,13 +136,13 @@ void loop(){
   delay(80);
   I2C_START();
   I2C_SEND(0x71);
-  I2C_READ();
-  I2C_READ();
-  I2C_READ();
-  I2C_READ();
-  I2C_READ();
-  I2C_READ();
-  I2C_READ();
+  I2C_READ(false);
+  I2C_READ(false);
+  I2C_READ(false);
+  I2C_READ(false);
+  I2C_READ(false);
+  I2C_READ(false);
+  I2C_READ(true);
   I2C_STOP();
   delay(2500);
 
